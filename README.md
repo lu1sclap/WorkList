@@ -5,7 +5,11 @@
 ※ node_modules 在自己下指令載就好
 
 npm init -y
+
 npm install express sqlite3 bcrypt cors
+
 ※ 啟動指令
+
 node database.js
+
 node server.js
