@@ -1,0 +1,364 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>工作清單管理系統</title>
+    <!-- 引入 Tailwind CSS 讓介面好看好用 -->
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100 min-h-screen font-sans">
+
+    <div class="container mx-auto px-4 py-8 max-w-4xl">
+        <!-- 標題 -->
+        <header class="flex justify-between items-center mb-8 bg-white p-4 rounded-lg shadow">
+            <h1 class="text-2xl font-bold text-gray-800">📋 工作清單協作系統</h1>
+            <div id="user-info" class="hidden flex items-center space-x-4">
+                <span id="welcome-text" class="text-gray-600 font-medium"></span>
+                <button onclick="logout()" class="bg-red-500 text-white px-3 py-1 rounded hover:bg-red-600 text-sm">登出</button>
+            </div>
+        </header>
+
+        <!-- 區塊：登入 / 註冊 (未登入時顯示) -->
+        <div id="auth-section" class="bg-white p-6 rounded-lg shadow max-w-md mx-auto">
+            <h2 id="auth-title" class="text-xl font-bold mb-4 text-center">會員登入</h2>
+            <div class="space-y-4">
+                <div>
+                    <label class="block text-gray-700 text-sm font-bold mb-2">帳號</label>
+                    <input type="text" id="username" class="w-full px-3 py-2 border rounded focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="請輸入帳號">
+                </div>
+                <div>
+                    <label class="block text-gray-700 text-sm font-bold mb-2">密碼</label>
+                    <input type="password" id="password" class="w-full px-3 py-2 border rounded focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="請輸入密碼">
+                </div>
+                <button onclick="handleLogin()" class="w-full bg-blue-500 text-white py-2 rounded hover:bg-blue-600 font-bold">登入</button>
+                <div class="text-center mt-2">
+                    <button onclick="toggleAuthMode()" id="toggle-btn" class="text-sm text-blue-500 hover:underline">沒有帳號？點此註冊一般會員</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- 區塊：主畫面 (登入後顯示) -->
+        <div id="main-section" class="hidden space-y-6">
+            
+            <!-- Admin 專屬：建立清單面板 -->
+            <div id="admin-panel" class="hidden bg-white p-6 rounded-lg shadow border-l-4 border-purple-500">
+                <h3 class="text-lg font-bold mb-4 text-purple-700">⚙️ 管理員後台：建立新的工作清單</h3>
+                <div class="space-y-3">
+                    <input type="text" id="list-title" placeholder="清單標題" class="w-full px-3 py-2 border rounded">
+                    <textarea id="list-desc" placeholder="清單說明 (選填)" class="w-full px-3 py-2 border rounded"></textarea>
+                    <div>
+                        <label class="block text-sm font-bold text-gray-700 mb-1">工作項目 (每行一項)</label>
+                        <textarea id="list-items" placeholder="例如：&#10;項目一：確認需求&#10;項目二：寫程式碼" class="w-full px-3 py-2 border rounded h-24"></textarea>
+                    </div>
+                    <button onclick="createWorkList()" class="bg-purple-600 text-white px-4 py-2 rounded hover:bg-purple-700 font-bold">發布清單</button>
+                </div>
+            </div>
+
+            <!-- 一般與管理員共同：清單列表區 -->
+            <div class="bg-white p-6 rounded-lg shadow">
+                <h3 class="text-lg font-bold mb-4 text-gray-800">📂 現有工作清單</h3>
+                <div id="lists-container" class="space-y-3">
+                    <!-- 動態載入清單 -->
+                </div>
+            </div>
+
+            <!-- 清單詳細與操作區 -->
+            <div id="detail-section" class="hidden bg-white p-6 rounded-lg shadow">
+                <div class="flex justify-between items-center mb-4">
+                    <h3 id="detail-title" class="text-xl font-bold text-blue-600"></h3>
+                    <button onclick="closeDetail()" class="text-gray-500 hover:text-gray-700 font-bold">✕ 關閉</button>
+                </div>
+                <p id="detail-desc" class="text-gray-600 mb-4 text-sm"></p>
+                <div id="items-container" class="space-y-3">
+                    <!-- 動態載入項目與狀態 -->
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+    <script>
+        const API_URL = 'http://localhost:3000/api';
+        let currentUser = null;
+        let isRegisterMode = false;
+        let currentListId = null;
+
+        window.onload = function() {
+            const savedUser = localStorage.getItem('currentUser');
+            if (savedUser) {
+                currentUser = JSON.parse(savedUser);
+                initDashboard(); // 自動進入主畫面
+            }
+        };
+
+        // 切換登入/註冊模式
+        function toggleAuthMode() {
+            isRegisterMode = !isRegisterMode;
+            document.getElementById('auth-title').innerText = isRegisterMode ? '註冊一般會員' : '會員登入';
+            document.getElementById('toggle-btn').innerText = isRegisterMode ? '已有帳號？點此登入' : '沒有帳號？點此註冊一般會員';
+        }
+
+        // 登入或註冊處理
+        async function handleLogin() {
+            const username = document.getElementById('username').value.trim();
+            const password = document.getElementById('password').value.trim();
+
+            if (!username || !password) {
+                alert('請輸入帳號與密碼');
+                return;
+            }
+
+            const endpoint = isRegisterMode ? '/register' : '/login';
+            try {
+                const res = await fetch(API_URL + endpoint, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username, password })
+                });
+                const data = await res.json();
+
+                if (!res.ok) {
+                    alert(data.error);
+                    return;
+                }
+
+                if (isRegisterMode) {
+                    alert('註冊成功！請直接登入');
+                    toggleAuthMode();
+                } else {
+                    currentUser = data.user;
+                    localStorage.setItem('currentUser', JSON.stringify(data.user));
+                    initDashboard();
+                }
+            } catch (err) {
+                alert('連線伺服器失敗');
+            }
+        }
+
+        // 登出
+        function logout() {
+            currentUser = null;
+            localStorage.removeItem('currentUser');
+            document.getElementById('auth-section').classList.remove('hidden');
+            document.getElementById('main-section').classList.add('hidden');
+            document.getElementById('user-info').classList.add('hidden');
+            document.getElementById('username').value = '';
+            document.getElementById('password').value = '';
+        }
+
+        // 初始化登入後的畫面
+        function initDashboard() {
+            document.getElementById('auth-section').classList.add('hidden');
+            document.getElementById('main-section').classList.remove('hidden');
+            document.getElementById('user-info').classList.remove('hidden');
+            document.getElementById('welcome-text').innerText = `歡迎, ${currentUser.username} (${currentUser.role === 'admin' ? '管理員' : '一般會員'})`;
+
+            if (currentUser.role === 'admin') {
+                document.getElementById('admin-panel').classList.remove('hidden');
+            } else {
+                document.getElementById('admin-panel').classList.add('hidden');
+            }
+
+            loadWorkLists();
+        }
+
+        // 載入所有工作清單
+        async function loadWorkLists() {
+            try {
+                const res = await fetch(API_URL + '/work-lists');
+                const lists = await res.json();
+                const container = document.getElementById('lists-container');
+                
+                if (lists.length === 0) {
+                    container.innerHTML = '<p class="text-gray-500">目前沒有任何工作清單。</p>';
+                    return;
+                }
+
+                container.innerHTML = lists.map(list => `
+                    <div class="border p-4 rounded flex justify-between items-center hover:bg-gray-50">
+                        <div>
+                            <h4 class="font-bold text-lg text-gray-800">${list.title}</h4>
+                            <p class="text-sm text-gray-500">${list.description || '無說明'}</p>
+                        </div>
+                        <div class="space-x-2">
+                            ${currentUser.role === 'admin' ? `
+                                <button onclick="viewAdminProgress(${list.id}, '${list.title}')" class="bg-purple-600 text-white px-3 py-1 rounded hover:bg-purple-700 text-sm">📊 檢視成員進度</button>
+                            ` : ''}
+                            <button onclick="viewListDetail(${list.id})" class="bg-blue-500 text-white px-3 py-1 rounded hover:bg-blue-600 text-sm">查看/操作</button>
+                        </div>
+                    </div>
+                `).join('');
+            } catch (err) {
+                console.error('載入清單失敗', err);
+            }
+        }
+
+        // Admin 建立清單
+        async function createWorkList() {
+            const title = document.getElementById('list-title').value.trim();
+            const description = document.getElementById('list-desc').value.trim();
+            const itemsText = document.getElementById('list-items').value.trim();
+
+            if (!title || !itemsText) {
+                alert('標題與工作項目不可為空');
+                return;
+            }
+
+            const items = itemsText.split('\n').filter(item => item.trim() !== '');
+
+            try {
+                const res = await fetch(API_URL + '/work-lists', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ title, description, adminId: currentUser.id, items })
+                });
+
+                if (res.ok) {
+                    alert('清單建立成功！');
+                    document.getElementById('list-title').value = '';
+                    document.getElementById('list-desc').value = '';
+                    document.getElementById('list-items').value = '';
+                    loadWorkLists();
+                } else {
+                    alert('建立失敗');
+                }
+            } catch (err) {
+                alert('伺服器錯誤');
+            }
+        }
+
+        // 查看清單詳細與項目
+        async function viewListDetail(listId) {
+            currentListId = listId;
+            try {
+                // 取得清單內容與項目
+                const listRes = await fetch(`${API_URL}/work-lists/${listId}`);
+                const listData = await listRes.json();
+
+                // 取得使用者自己的進度
+                const progRes = await fetch(`${API_URL}/progress/${currentUser.id}/${listId}`);
+                const progressData = await progRes.json();
+                const progressMap = {};
+                progressData.forEach(p => { progressMap[p.work_item_id] = p.status; });
+
+                document.getElementById('detail-title').innerText = listData.title;
+                document.getElementById('detail-desc').innerText = listData.description || '';
+
+                const itemsContainer = document.getElementById('items-container');
+                itemsContainer.innerHTML = listData.items.map(item => {
+                    const currentStatus = progressMap[item.id] || 'todo';
+                    return `
+                        <div class="border p-3 rounded flex justify-between items-center bg-gray-50">
+                            <span class="text-gray-800">${item.content}</span>
+                            <select onchange="updateProgress(${item.id}, this.value,this)" class="border rounded px-2 py-1 text-sm font-medium ${getStatusColor(currentStatus)}">
+                                <option value="todo" ${currentStatus === 'todo' ? 'selected' : ''}>📌 待辦 (Todo)</option>
+                                <option value="in_progress" ${currentStatus === 'in_progress' ? 'selected' : ''}>⏳ 進行中 (In Progress)</option>
+                                <option value="done" ${currentStatus === 'done' ? 'selected' : ''}>✅ 已完成 (Done)</option>
+                            </select>
+                        </div>
+                    `;
+                }).join('');
+
+                document.getElementById('detail-section').classList.remove('hidden');
+            } catch (err) {
+                alert('無法載入清單細節');
+            }
+        }
+
+        function getStatusColor(status) {
+            if (status === 'done') return 'bg-green-100 text-green-800';
+            if (status === 'in_progress') return 'bg-yellow-100 text-yellow-800';
+            return 'bg-gray-100 text-gray-800';
+        }
+
+        // 更新工作進度
+        async function updateProgress(workItemId, status, selectElement) {
+			try {
+				const res = await fetch(API_URL + '/progress', {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify({ userId: currentUser.id, workItemId, status })
+				});
+				
+				if (!res.ok) {
+					alert('更新狀態失敗');
+					return;
+				}
+
+				// 直接透過傳進來的 selectElement 更新選單顏色
+				selectElement.className = `border rounded px-2 py-1 text-sm font-medium ${getStatusColor(status)}`;
+			} catch (err) {
+				alert('伺服器連線錯誤');
+			}
+		}
+
+        function closeDetail() {
+            document.getElementById('detail-section').classList.add('hidden');
+            currentListId = null;
+        }
+
+        async function viewAdminProgress(listId, listTitle) {
+            try {
+                const res = await fetch(`${API_URL}/admin/progress/${listId}`);
+                const data = await res.json();
+
+                // 依照使用者名稱將資料分組
+                const userGroups = {};
+                data.forEach(row => {
+                    if (!userGroups[row.username]) {
+                        userGroups[row.username] = [];
+                    }
+                    userGroups[row.username].push(row);
+                });
+
+                // 建立一個彈窗或直接顯示在詳細區塊
+                const detailSection = document.getElementById('detail-section');
+                document.getElementById('detail-title').innerText = `📊 【管理員檢視】${listTitle} - 成員進度`;
+                document.getElementById('detail-desc').innerText = '以下為各個一般會員針對此清單的工作執行狀況：';
+
+                const itemsContainer = document.getElementById('items-container');
+                
+                if (Object.keys(userGroups).length === 0) {
+                    itemsContainer.innerHTML = '<p class="text-gray-500">目前沒有一般會員註冊或填寫進度。</p>';
+                } else {
+                    itemsContainer.innerHTML = Object.keys(userGroups).map(username => {
+                        const userItems = userGroups[username];
+                        return `
+                            <div class="border p-4 rounded bg-gray-50 mb-4">
+                                <h4 class="font-bold text-md text-purple-700 mb-2">👤 成員：${username}</h4>
+                                <div class="space-y-2">
+                                    ${userItems.map(item => `
+                                        <div class="flex justify-between items-center text-sm bg-white p-2 rounded border">
+                                            <span>${item.work_content}</span>
+                                            <span class="px-2 py-1 rounded text-xs font-bold ${getStatusBadge(item.status)}">
+                                                ${getStatusText(item.status)}
+                                            </span>
+                                        </div>
+                                    `).join('')}
+                                </div>
+                            </div>
+                        `;
+                    }).join('');
+                }
+
+                detailSection.classList.remove('hidden');
+            } catch (err) {
+                alert('無法載入成員進度');
+            }
+        }
+
+function getStatusText(status) {
+    if (status === 'done') return '✅ 已完成';
+    if (status === 'in_progress') return '⏳ 進行中';
+    return '📌 待辦';
+}
+
+function getStatusBadge(status) {
+    if (status === 'done') return 'bg-green-100 text-green-800';
+    if (status === 'in_progress') return 'bg-yellow-100 text-yellow-800';
+    return 'bg-gray-100 text-gray-800';
+}
+    </script>
+</body>
+</html>
