@@ -3,6 +3,7 @@
 - 管理員可以建工作清單並查看會員工作進度
 
 ※ node_modules 在自己下指令載就好
+
 npm init -y
 npm install express sqlite3 bcrypt cors
 ※ 啟動指令
